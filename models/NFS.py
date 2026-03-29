@@ -957,8 +957,8 @@ class NFS(nn.Module):
         faces = batch.faces.to(self.device)
         img = batch.img.to(self.device)
         #gt_normals = batch.normals.squeeze()
-        operators = pickle.load(open(batch.operators, mode='rb'))
-        dfn_info = pickle.load(open(batch.get_dfn_info, mode='rb'))
+        operators = pickle.load(open(batch.operators, mode='rb')) if isinstance(batch.operators, str) else batch.operators
+        dfn_info = pickle.load(open(batch.get_dfn_info, mode='rb')) if isinstance(batch.get_dfn_info, str) else batch.get_dfn_info
         ##------------------------------------------------------------------------------
         
         

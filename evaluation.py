@@ -448,7 +448,8 @@ class NFR_helper():
                 self.model.update_precomputes(dfn_info)
                 pred_exp[t] = self.model.encode(inputs_v, img.to(self.device), N_F=faces.shape[0])
         
-        operators = pickle.load(open(operators[0], mode='rb'))
+        _op_path = operators[0] if isinstance(operators, (list, tuple)) else operators
+        operators = pickle.load(open(_op_path, mode='rb'))
         
         # identity encoder + decoder
         pred_outputs, pred_jacobians, pred_id = self.calc_new_mesh(
@@ -535,7 +536,7 @@ class Trainer():
         # self.opts.selection = 2
         self.test_dataset = NFSDataset(self.opts, is_train=False, is_valid=False, return_audio_dir=True)
        
-        self.test_dataloader = torch.utils.data.DataLoader(self.test_dataset, batch_size=1, shuffle=False, num_workers=0)
+        self.test_dataloader = torch.utils.data.DataLoader(self.test_dataset, batch_size=1, shuffle=False, num_workers=0, collate_fn=lambda x: x[0])
 #         testsampler = MeshSampler_coarse(self.test_dataset.len_list, batch_size=1, shuffle=False, n_sampling=True, n_=30)
 #         self.test_dataloader = torch.utils.data.DataLoader(
 #             self.test_dataset, 
@@ -613,18 +614,18 @@ class Trainer():
 #             template = batch.template
 #             faces = batch.faces.cpu()
 #             audio_path = batch.audio_path
-            data = (audio_feat, id_coeff, gt_rig_params, template, dfn_info, operators, vertices, faces, img)
+            # collate_fn=lambda x:x[0] returns raw tuple, add batch dims where needed
             from easydict import EasyDict as edict
             batch = edict()
             batch.audio_feat=audio_feat
-            batch.id_coeff=id_coeff
-            batch.gt_rig_params=gt_rig_params
-            batch.template=template
+            batch.id_coeff=id_coeff.unsqueeze(0) if id_coeff.dim() == 1 else id_coeff
+            batch.gt_rig_params=gt_rig_params.unsqueeze(0) if gt_rig_params.dim() == 2 else gt_rig_params
+            batch.template=template.unsqueeze(0) if template.dim() == 2 else template
             batch.get_dfn_info=dfn_info
-            batch.operators=operators[0]
-            batch.vertices=vertices
-            batch.faces=faces[0]
-            batch.img=img
+            batch.operators=operators[0] if isinstance(operators, (list, tuple)) else operators
+            batch.vertices=vertices.unsqueeze(0) if vertices.dim() == 2 else vertices
+            batch.faces=faces
+            batch.img=img.unsqueeze(0) if img.dim() == 3 else img
             batch.mesh_data=mesh_data
             mesh_data = np.array(['ict', 'voca', 'biwi', 'mf'])[batch.mesh_data.cpu().numpy()]
             with torch.no_grad():
@@ -652,19 +653,20 @@ class Trainer():
             recon_vDec.append(loss_dict["recon_vDec"].detach().cpu().numpy())
             
             if self.opts.save_vert:
+                _ap = audio_path[0] if isinstance(audio_path, (list, tuple)) else audio_path
                 try:
-                    _, feat_lvl, id_sent = audio_path[0].split('/wav2vec2')[-1].split('/')
+                    _, feat_lvl, id_sent = _ap.split('/wav2vec2')[-1].split('/')
                     if self.opts.selection <= 2:
-                        id_ = audio_path[0].split('/wav2vec2')[0].split('/')[-1]
+                        id_ = _ap.split('/wav2vec2')[0].split('/')[-1]
                         id_sent = id_ +'_'+ id_sent
                 except:
                     if mesh_data == 'mf':
                         if self.opts.selection:
-                            id_sent='-'.join(audio_path[0].split('/')[-2:])
+                            id_sent='-'.join(_ap.split('/')[-2:])
                         else:
-                            id_sent = '-'.join(audio_path[0].split('/')[-3:-1])
+                            id_sent = '-'.join(_ap.split('/')[-3:-1])
                     elif mesh_data =='ict':
-                        id_sent = audio_path[0]
+                        id_sent = _ap
                     else:
                         import pdb;pdb.set_trace()
                         
@@ -714,7 +716,7 @@ class Trainer():
         # define dataset -----------------------------------------------------------------------------------------
         self.opts.selection = 2
         self.test_dataset = InvRigDataset(self.opts, is_train=False, is_valid=False, print_config=True)
-        self.test_dataloader = torch.utils.data.DataLoader(self.test_dataset, batch_size=1, shuffle=False, num_workers=0)
+        self.test_dataloader = torch.utils.data.DataLoader(self.test_dataset, batch_size=1, shuffle=False, num_workers=0, collate_fn=lambda x: x[0])
         len_test = len(self.test_dataset)
         
         assert len_test > 0, f"test Dataset: {len_test}"
@@ -807,7 +809,7 @@ class Trainer():
         # define dataset -----------------------------------------------------------------------------------------
         self.opts.selection = 2
         self.test_dataset = NFSDataset(self.opts, is_train=False, is_valid=False)
-        self.test_dataloader = torch.utils.data.DataLoader(self.test_dataset, batch_size=1, shuffle=False, num_workers=0)
+        self.test_dataloader = torch.utils.data.DataLoader(self.test_dataset, batch_size=1, shuffle=False, num_workers=0, collate_fn=lambda x: x[0])
         len_test = len(self.test_dataset)
         
         assert len_test > 0, f"test Dataset: {len_test}"

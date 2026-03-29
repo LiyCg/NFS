@@ -1144,7 +1144,7 @@ class NFSDataset(data.Dataset):
     def __init__(self, 
                  opts,
                  ict_basedir='/data/sihun/ICT-audio2face/split_set/', 
-                 mf_basedir="/data/sihun/multiface/audio2face",
+                 mf_basedir="/data/sihun/multiface_align",
                  return_audio_dir=False,
                  audio_feat_type: str ='wav2vec2',
                  audio_feat_level: str = "05",
@@ -1227,7 +1227,7 @@ class NFSDataset(data.Dataset):
         ## Multiface ----------------------------------------------------------------------
         if self.use_mf_SEN or self.use_mf_ROM:
             self.mf_trimesh = trimesh.load('./utils/mf/mf_aligned_mean.obj', process=False, maintain_order=True)
-            self.mf_precompute_path = os.path.join(mf_basedir, 'precomputes_std')
+            self.mf_precompute_path = os.path.join(mf_basedir, 'precomputes')
             self.mf_std = np.load(f'./utils/mf/standardization.npy', allow_pickle=True).item()
             
             self.mf_basedir = os.path.join(mf_basedir)
@@ -1236,8 +1236,9 @@ class NFSDataset(data.Dataset):
             self.mf_audio_wav = []
             self.mf_ROM = []
             for id_ in self.mf_data_split[self.mode]:
-                self.mf_audio_wav+=sorted(glob.glob(f'{self.mf_basedir}/wav/{id_}*.wav'))
-                self.mf_ROM +=sorted(glob.glob(f'{self.mf_basedir}/vertices_npy_exp/{id_}/*.npy'))
+                for seq_dir in sorted(glob.glob(f'{self.mf_basedir}/ROM/{self.mode}/vertices_npy/{id_}/*')):
+                    if os.path.isdir(seq_dir):
+                        self.mf_ROM.append(seq_dir + '.npy')
         ## --------------------------------------------------------------------------------
         
         self.len_ict_synth = 0
@@ -1490,9 +1491,10 @@ class NFSDataset(data.Dataset):
         npy_files_dir = npy_file.replace('.npy', '')
         vertices, v0 = self.load_mf_ROM_verts(npy_files_dir, WS=self.WS)
 
-        ## align
-        v0 = v0[self.mf_std['v_idx']]
-        vertices = vertices[:, self.mf_std['v_idx']]
+        ## align (skip v_idx if already decimated)
+        if v0.shape[0] > len(self.mf_std['v_idx']):
+            v0 = v0[self.mf_std['v_idx']]
+            vertices = vertices[:, self.mf_std['v_idx']]
         R1, t1, s1 = procrustes_LDM(v0, template, mode='np')
         vertices = (s1*vertices)@R1.T+t1
 
@@ -1564,8 +1566,9 @@ class NFSDataset(data.Dataset):
     
     def load_mf_ROM_verts(self, basedir, WS):
         if os.path.exists(basedir):
-            Frames = len(glob.glob(os.path.join(basedir, "*.npy")))
-            if self.mode != 'test': 
+            frame_files = sorted(glob.glob(os.path.join(basedir, "*.npy")))
+            Frames = len(frame_files)
+            if self.mode != 'test':
                 try:
                     slice_idx = self.get_slice_idx(Frames, WS)
                 except:
@@ -1573,16 +1576,16 @@ class NFSDataset(data.Dataset):
             else:
                 slice_idx = 0
                 WS = Frames
-            
-            vertices = np.zeros((WS, 7306, 3))
-            for i, j in enumerate(range(slice_idx,slice_idx+WS)):
-                exp_verts_npy_dir = os.path.join(basedir, f"{j:04d}.npy")
+
+            v0 = np.load(frame_files[0])
+            V = v0.shape[0]
+            vertices = np.zeros((WS, V, 3))
+            for i, j in enumerate(range(slice_idx, slice_idx+WS)):
                 try:
-                    vertices[i] = np.load(exp_verts_npy_dir)
+                    vertices[i] = np.load(frame_files[j])
                 except:
-                    raise ValueError(f'something is wrong! {exp_verts_npy_dir}')
-            # for alignment
-            v0 = np.load(os.path.join(basedir, f"{0:04d}.npy"))
+                    raise ValueError(f'something is wrong! {frame_files[j]}')
+            # v0 already loaded from frame_files[0] above
         else:
             exp_verts_file = basedir+'.npy'
             vertices = np.load(exp_verts_file)
