@@ -1568,14 +1568,9 @@ class NFSDataset(data.Dataset):
         if os.path.exists(basedir):
             frame_files = sorted(glob.glob(os.path.join(basedir, "*.npy")))
             Frames = len(frame_files)
-            if self.mode != 'test':
-                try:
-                    slice_idx = self.get_slice_idx(Frames, WS)
-                except:
-                    raise ValueError(f'something is wrong! {Frames}')
-            else:
-                slice_idx = 0
-                WS = Frames
+            # Always use full sequence for NFS prediction export
+            slice_idx = 0
+            WS = Frames
 
             v0 = np.load(frame_files[0])
             V = v0.shape[0]

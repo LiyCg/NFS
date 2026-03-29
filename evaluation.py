@@ -98,8 +98,12 @@ def Options():
 
     parser.add_argument("--render",       action='store_true', help="render")
     parser.add_argument("--save_vert",    action='store_true', help="render")
-    
+
     parser.add_argument("--scale_exp",    type=float, default=1.0, help='temp lambda for encoder')
+    parser.add_argument("--split", type=str, default='test', choices=['train', 'val', 'test'],
+                        help='Data split to evaluate on')
+    parser.add_argument("--save_dir", type=str, default='/data2/inyup/nfs_predictions/mf_ROM',
+                        help='Root dir for organized NFS prediction output')
     parser.set_defaults(is_train=True)
     
     
@@ -534,7 +538,9 @@ class Trainer():
         
         # define dataset -----------------------------------------------------------------------------------------
         # self.opts.selection = 2
-        self.test_dataset = NFSDataset(self.opts, is_train=False, is_valid=False, return_audio_dir=True)
+        _is_train = (self.opts.split == 'train')
+        _is_valid = (self.opts.split == 'val')
+        self.test_dataset = NFSDataset(self.opts, is_train=_is_train, is_valid=_is_valid, return_audio_dir=True)
        
         self.test_dataloader = torch.utils.data.DataLoader(self.test_dataset, batch_size=1, shuffle=False, num_workers=0, collate_fn=lambda x: x[0])
 #         testsampler = MeshSampler_coarse(self.test_dataset.len_list, batch_size=1, shuffle=False, n_sampling=True, n_=30)
@@ -553,12 +559,12 @@ class Trainer():
         os.makedirs(self.opts.log_dir, exist_ok=True)
         
         s_num = self.opts.selection
-        print(f"selection: {s_num}")
+        print(f"selection: {s_num}, split: {self.opts.split}")
         if self.opts.on_ict:
             if s_num > 2:
                 raise ValueError('on_ict only available on selection 2')
         
-        self.opts.log_dir = os.path.join(self.opts.log_dir, f"eval-retarget-select_{s_num:02d}")
+        self.opts.log_dir = os.path.join(self.opts.log_dir, f"eval-retarget-select_{s_num:02d}-{self.opts.split}")
         os.makedirs(self.opts.log_dir, exist_ok=True)
                             
         # self logger
@@ -669,9 +675,31 @@ class Trainer():
                         id_sent = _ap
                     else:
                         import pdb;pdb.set_trace()
-                        
+
+                # Save to organized structure: {save_dir}/{split}/{id}/{seq}.npy
+                if hasattr(self.opts, 'save_dir') and self.opts.save_dir:
+                    # id_sent format: "{id}-{seq}" or "{id}-{seq}.npy"
+                    # e.g. "m--20171024--0000--002757580--GHS-E001_Neutral_Eyes_Open.npy"
+                    _id_sent = id_sent.replace('.npy', '')
+                    # Split at last occurrence of "--GHS-" to separate id and seq
+                    _split_idx = _id_sent.rfind('--GHS-')
+                    if _split_idx >= 0:
+                        _id = _id_sent[:_split_idx + 5]   # includes "--GHS"
+                        _seq = _id_sent[_split_idx + 6:]   # after "--GHS-"
+                    else:
+                        _id = 'unknown'
+                        _seq = _id_sent
+                    _out_dir = os.path.join(self.opts.save_dir, self.opts.split, _id)
+                    _rig_dir = os.path.join(_out_dir, 'rig')
+                    os.makedirs(_out_dir, exist_ok=True)
+                    os.makedirs(_rig_dir, exist_ok=True)
+                    np.save(os.path.join(_out_dir, f'{_seq}.npy'),
+                            pred_vertices.detach().cpu().numpy())
+                    np.save(os.path.join(_rig_dir, f'{_seq}.npy'),
+                            pred_exp_coeff.detach().cpu().numpy())
+
                 plt.imshow(np.r_[
-                    gt_rig_params.squeeze(0).cpu().numpy(), 
+                    gt_rig_params.squeeze(0).cpu().numpy(),
                     np.zeros([1,128]),
                     pred_exp_coeff.cpu().numpy()
                 ])

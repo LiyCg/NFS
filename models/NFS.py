@@ -345,7 +345,7 @@ class NFS(nn.Module):
             verts_nrm = self.calc_norm_torch(verts_pos, faces, at='verts') # [1, V, 3]
             
             B, V, _ = vertices.shape
-            verts_img_feat = img_feat.repeat(1, V, 1) # [1, V, 128]
+            verts_img_feat = img_feat.expand(B, V, -1) # [B, V, 128]
             local_feat = torch.cat([verts_pos, verts_nrm, verts_img_feat], dim=-1) # [1, V, 3+3+128]
         else:
             verts_pos = vertices # [1, V, 3]
@@ -970,6 +970,7 @@ class NFS(nn.Module):
         
         with torch.no_grad():
             pred_id_coeff = self.encode_id(vert_feat, dfn_info)#---------------- [1, ID]
+            pred_exp_coeff = self.encode_exp(vert_feat_exp, dfn_info, batch_process=False)# [W, Rig]
             if 'new2' in self.design:
                 pred_seg_coeff = self.encode_seg(vert_feat, dfn_info)# [1, V, Seg]
             else:
